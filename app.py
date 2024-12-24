@@ -9,10 +9,8 @@ app = Flask(__name__)
 # Función para convertir objetos datetime/timedelta a cadenas
 def convert_to_str(obj):
     if isinstance(obj, datetime):
-        print('SI')
         return obj.strftime('%Y-%m-%d %H:%M:%S')  # Formato DATETIME
     elif isinstance(obj, timedelta):
-        print('SI')
         return str(obj)  # Puede ser útil para campos de tipo TIME
     return obj
 
@@ -29,13 +27,10 @@ def get_db_connection():
 
 # Definir una ruta
 @app.route('/')
-def hello_world():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM sucursales')
-    sucs = cursor.fetchall()
-    return sucs
+def home():
+    return 'Home'
 
+# Obtener todas las sucursales
 @app.route('/obtener_sucursales')
 def obtener_sucursales():
     conn = get_db_connection()
@@ -44,6 +39,8 @@ def obtener_sucursales():
     sucs = cursor.fetchall()
     return sucs
 
+# Añadir varios movimientos
+# JSON {tipo:str, fecha:str, categoria:str, metodo_pago:str, monto:int, area:str, obs:str}
 @app.route('/añadir_movimientos', methods=['POST'])
 def añadir_movimiento():
     data = request.get_json()
@@ -57,7 +54,39 @@ def añadir_movimiento():
     conn.commit()
     conn.close()
     return 'Éxito'
-    
+
+# Tomar todos los movimientos
+@app.route('/obtener_movimientos')
+def obtener_movimientos():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT fecha, id_movimiento, categoria, metodo_pago, monto, observacion, tipo, sucursales.nombre AS area FROM movimientos INNER JOIN sucursales ON sucursales.id_sucursal = movimientos.sucursal_fk ORDER BY fecha')
+    data = cursor.fetchall()
+    conn.close()
+    return data
+
+# Tomar todos los ingresos
+@app.route('/obtener_monto_ingresos')
+def obtener_monto_ingresos():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) AS cantidad_movimientos, SUM(monto) FROM movimientos WHERE movimientos.tipo= \'INGRESO\'')
+    data = cursor.fetchall()
+    conn.close()
+    return data
+
+# Tomar todos los egresos
+@app.route('/obtener_monto_egresos')
+def obtener_monto_egresos():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) AS cantidad_movimientos, SUM(monto) FROM movimientos WHERE movimientos.tipo= \'EGRESO\'')
+    data = cursor.fetchall()
+    conn.close()
+    return data
+
+
+# Listar todos los empleados con sus horarios y turnos_dias
 @app.route('/listar_empleados_horarios')
 def listar_empleados_horarios():
     conn = get_db_connection()
@@ -72,6 +101,43 @@ def listar_empleados_horarios():
     conn.close()
     return json.dumps(result)
     
+# Listar horas trabajadas en un rango de fechas por empleado
+@app.route('/listar_horas_totales_empleados')
+def listar_horas_totales_empleados():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    data = request.get_json()
+    cursor.execute(f'''
+    SELECT empleados.nombre, empleados.apellido, SUM(TIMESTAMPDIFF(SECOND, hs_entrada, hs_salida) / 3600) AS horas_trabajadas 
+    FROM marcas_reloj 
+        INNER JOIN empleados ON marcas_reloj.id_empleado_fk = empleados.legajo 
+    WHERE fecha_marca 
+    BETWEEN '{data['fecha_inicio']}' AND '{data['fecha_fin']}' 
+    GROUP BY empleados.nombre, empleados.apellido 
+    ORDER BY empleados.nombre, empleados.apellido;
+    ''')
+    info = cursor.fetchall()
+    return info
+
+# Listar horas trabajadas en un rango de fechas por un empleado en particular
+@app.route('/listar_horas_totales_empleado')
+def listar_horas_totales_empleado():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    data = request.get_json()
+    cursor.execute(f'''
+    SELECT empleados.nombre, empleados.apellido, SUM(TIMESTAMPDIFF(SECOND, hs_entrada, hs_salida) / 3600) AS horas_trabajadas 
+    FROM marcas_reloj 
+        INNER JOIN empleados ON marcas_reloj.id_empleado_fk = empleados.legajo 
+    WHERE fecha_marca 
+    BETWEEN '{data['fecha_inicio']}' AND '{data['fecha_fin']}'
+    AND empleados.legajo = '{data['legajo']}' 
+    GROUP BY empleados.nombre, empleados.apellido 
+    ORDER BY empleados.nombre, empleados.apellido;
+    ''')
+    info = cursor.fetchall()
+    return info
+
 # Iniciar la aplicación
 if __name__ == '__main__':
     app.run(debug=True)
