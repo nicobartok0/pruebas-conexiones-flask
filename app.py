@@ -35,25 +35,28 @@ def home():
 def obtener_sucursales():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM sucursales')
+    cursor.execute('SELECT nombre FROM sucursales')
     sucs = cursor.fetchall()
     return sucs
 
-# Añadir varios movimientos
-# JSON {tipo:str, fecha:str, categoria:str, metodo_pago:str, monto:int, area:str, obs:str}
-@app.route('/añadir_movimientos', methods=['POST'])
-def añadir_movimiento():
-    data = request.get_json()
-    print(data)
+@app.route('/obtener_funciones')
+def obtener_funciones():
     conn = get_db_connection()
     cursor = conn.cursor()
-    for mov in data:
-        query = f'INSERT INTO movimientos (tipo, fecha, categoria, metodo_pago, monto, sucursal_fk, observacion) VALUES (\"{mov['tipo']}\", \"{mov['fecha']}\", \"{mov['categoria']}\", \"{mov['metodo_pago']}\", {mov['monto']}, (SELECT id_sucursal FROM sucursales WHERE sucursales.nombre = \'{mov['area']}\'), \"{mov['observacion']}\")'
-        print(query)
-        cursor.execute(query)
-    conn.commit()
+    cursor.execute('SELECT nombre_funcion FROM funcion')
+    res = cursor.fetchall()
     conn.close()
-    return 'Éxito'
+    return res
+
+@app.route('/obtener_novedades')
+def obtener_novedades():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT nombre_novedad FROM novedades')
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
 
 # Tomar todos los movimientos
 @app.route('/obtener_movimientos')
@@ -137,6 +140,69 @@ def listar_horas_totales_empleado():
     ''')
     info = cursor.fetchall()
     return info
+
+@app.route('/marcas')
+def marcas():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    data = request.get_json()
+    query = f"""
+    SELECT e.legajo, 
+    mr.fecha_marca, 
+    DAYOFWEEK(mr.fecha_marca) AS 'dia', 
+    e.nombre, 
+    e.apellido, 
+    s.nombre AS 'sucursal',
+    f.nombre_funcion, 
+    h.horario_entrada, 
+    mr.hs_entrada, 
+    h.horario_salida, 
+    mr.hs_salida, 
+    mr.novedad_fk, 
+    mr.observaciones 
+    FROM empleados e 
+    INNER JOIN marcas_reloj mr ON mr.id_empleado_fk = e.legajo 
+    INNER JOIN sucursales s ON e.sucursal_fk = s.id_sucursal
+    INNER JOIN funcion f ON e.funcion_fk = f.id_funcion 
+    INNER JOIN horarios h ON e.horario_fk = h.id_horario 
+    INNER JOIN novedades n ON n.id_novedad = mr.novedad_fk 
+    INNER JOIN emp_hor eh ON e.legajo = eh.legajo_fk 
+    INNER JOIN turno_dias td ON eh.turno_dia_fk = td.id_turno_dia 
+    WHERE 1=1
+    """
+    # FILTROS: desde fecha_inicio hasta fecha_fin, sucursal, N° Empleado, Novedad, Nombre empleado (se parece a), Función
+    if data['fecha_inicio'] != '' and data['fecha_fin'] != '':
+        query += f' AND mr.fecha_marca BETWEEN \'{data['fecha_inicio']}\' AND \'{data['fecha_fin']}\''
+    if data['sucursal'] != '':
+        query += f' AND s.nombre = \'{data['sucursal']}\''
+    if data['n_empleado'] != '':
+        query += f' AND e.num_empleado = {data['num_empleado']}'
+    if data['novedad'] != '':
+        query += f' AND mr.novedad_fk = (SELECT novedades.id_novedad WHERE novedades.nombre_novedad = \'{data['novedad']}\')'
+    if data['nombre'] != '':
+        query += f' AND e.nombre LIKE \'%{data['nombre']}%\' OR e.apellido LIKE \'%{data['nombre']}%\''  
+    if data['funcion'] != '':
+        query += f' AND f.nombre_funcion = \'{data['funcion']}\''
+     
+    cursor.execute(query)
+    res = cursor.fetchall()
+    return json.dumps(res, default=str)
+
+# Añadir varios movimientos
+# JSON {tipo:str, fecha:str, categoria:str, metodo_pago:str, monto:int, area:str, obs:str}
+@app.route('/añadir_movimientos', methods=['POST'])
+def añadir_movimiento():
+    data = request.get_json()
+    print(data)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    for mov in data:
+        query = f'INSERT INTO movimientos (tipo, fecha, categoria, metodo_pago, monto, sucursal_fk, observacion) VALUES (\"{mov['tipo']}\", \"{mov['fecha']}\", \"{mov['categoria']}\", \"{mov['metodo_pago']}\", {mov['monto']}, (SELECT id_sucursal FROM sucursales WHERE sucursales.nombre = \'{mov['area']}\'), \"{mov['observacion']}\")'
+        print(query)
+        cursor.execute(query)
+    conn.commit()
+    conn.close()
+    return 'Éxito'
 
 # Iniciar la aplicación
 if __name__ == '__main__':
