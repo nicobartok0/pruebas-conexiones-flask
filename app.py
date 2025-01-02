@@ -134,7 +134,7 @@ def listar_horas_totales_empleado():
         INNER JOIN empleados ON marcas_reloj.id_empleado_fk = empleados.legajo 
     WHERE fecha_marca 
     BETWEEN '{data['fecha_inicio']}' AND '{data['fecha_fin']}'
-    AND empleados.legajo = '{data['legajo']}' 
+    AND empleados.num_empleado = '{data['n_empleado']}' 
     GROUP BY empleados.nombre, empleados.apellido 
     ORDER BY empleados.nombre, empleados.apellido;
     ''')
@@ -146,28 +146,33 @@ def marcas():
     conn = get_db_connection()
     cursor = conn.cursor()
     data = request.get_json()
+    print(data)
     query = f"""
-    SELECT e.legajo, 
+    SELECT 
+    e.num_empleado, 
     mr.fecha_marca, 
     DAYOFWEEK(mr.fecha_marca) AS 'dia', 
     e.nombre, 
     e.apellido, 
-    s.nombre AS 'sucursal',
+    s.nombre AS 'sucursal', 
     f.nombre_funcion, 
     h.horario_entrada, 
     mr.hs_entrada, 
+    mr.hs_almuerzo_inicio AS inicio_almuerzo,
+    mr.hs_almuerzo_fin AS fin_almuerzo,
     h.horario_salida, 
     mr.hs_salida, 
-    mr.novedad_fk, 
+    TIMEDIFF(mr.hs_salida, mr.hs_entrada) AS 'horas_trabajadas',
+    n.nombre_novedad, 
     mr.observaciones 
     FROM empleados e 
     INNER JOIN marcas_reloj mr ON mr.id_empleado_fk = e.legajo 
-    INNER JOIN sucursales s ON e.sucursal_fk = s.id_sucursal
+    INNER JOIN sucursales s ON e.sucursal_fk = s.id_sucursal 
     INNER JOIN funcion f ON e.funcion_fk = f.id_funcion 
-    INNER JOIN horarios h ON e.horario_fk = h.id_horario 
     INNER JOIN novedades n ON n.id_novedad = mr.novedad_fk 
     INNER JOIN emp_hor eh ON e.legajo = eh.legajo_fk 
     INNER JOIN turno_dias td ON eh.turno_dia_fk = td.id_turno_dia 
+    INNER JOIN horarios h ON h.id_horario = eh.id_horario_fk 
     WHERE 1=1
     """
     # FILTROS: desde fecha_inicio hasta fecha_fin, sucursal, N° Empleado, Novedad, Nombre empleado (se parece a), Función
@@ -176,17 +181,90 @@ def marcas():
     if data['sucursal'] != '':
         query += f' AND s.nombre = \'{data['sucursal']}\''
     if data['n_empleado'] != '':
-        query += f' AND e.num_empleado = {data['num_empleado']}'
+        query += f' AND e.num_empleado = {data['n_empleado']}'
     if data['novedad'] != '':
         query += f' AND mr.novedad_fk = (SELECT novedades.id_novedad WHERE novedades.nombre_novedad = \'{data['novedad']}\')'
     if data['nombre'] != '':
         query += f' AND e.nombre LIKE \'%{data['nombre']}%\' OR e.apellido LIKE \'%{data['nombre']}%\''  
     if data['funcion'] != '':
         query += f' AND f.nombre_funcion = \'{data['funcion']}\''
+    
+    query += """
+    AND (
+    -- Filtrar lunes a viernes
+    (td.turno_dia_desc = 'Lunes a Viernes' AND DAYOFWEEK(mr.fecha_marca) BETWEEN 2 AND 6)
+    -- Filtrar sábado
+    OR (td.turno_dia_desc = 'Sábado' AND DAYOFWEEK(mr.fecha_marca) = 7)
+    -- Filtrar domingo
+    OR (td.turno_dia_desc = 'Domingo' AND DAYOFWEEK(mr.fecha_marca) = 1)
+)
+ORDER BY  mr.fecha_marca, e.num_empleado;
+    """
      
     cursor.execute(query)
     res = cursor.fetchall()
-    return json.dumps(res, default=str)
+    try:
+        return json.dumps(res, default=str)
+    except:
+        return 'error'
+
+@app.route('/marcas_horasxsemana')
+def marcas_horasxsemama():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    data = request.get_json()
+    print(data)
+    query = """
+    SELECT 
+    e.num_empleado, 
+    e.nombre, 
+    e.apellido, 
+    s.nombre AS 'sucursal',
+    YEAR(mr.fecha_marca) AS 'año',
+    WEEK(mr.fecha_marca, 1) AS 'semana', 
+    SUM(TIMESTAMPDIFF(SECOND, mr.hs_entrada, mr.hs_salida)) / 3600 AS 'horas_trabajadas'  
+    FROM empleados e 
+    INNER JOIN marcas_reloj mr ON mr.id_empleado_fk = e.legajo 
+    INNER JOIN sucursales s ON e.sucursal_fk = s.id_sucursal 
+    INNER JOIN emp_hor eh ON e.legajo = eh.legajo_fk 
+    INNER JOIN turno_dias td ON eh.turno_dia_fk = td.id_turno_dia 
+    INNER JOIN horarios h ON h.id_horario = eh.id_horario_fk 
+    WHERE 1 = 1
+    AND (
+    
+    (td.turno_dia_desc = 'Lunes a Viernes' AND DAYOFWEEK(mr.fecha_marca) BETWEEN 2 AND 6)
+    
+    OR (td.turno_dia_desc = 'Sábado' AND DAYOFWEEK(mr.fecha_marca) = 7)
+    
+    OR (td.turno_dia_desc = 'Domingo' AND DAYOFWEEK(mr.fecha_marca) = 1)
+)
+
+    """
+    # FILTROS: desde fecha_inicio hasta fecha_fin, sucursal, N° Empleado, Novedad, Nombre empleado (se parece a), Función
+    if data['fecha_inicio'] != '' and data['fecha_fin'] != '':
+        query += f' AND mr.fecha_marca BETWEEN \'{data['fecha_inicio']}\' AND \'{data['fecha_fin']}\''
+    if data['sucursal'] != '':
+        query += f' AND s.nombre = \'{data['sucursal']}\''
+    if data['n_empleado'] != '':
+        query += f' AND e.num_empleado = {data['n_empleado']}'
+    if data['novedad'] != '':
+        query += f' AND mr.novedad_fk = (SELECT novedades.id_novedad WHERE novedades.nombre_novedad = \'{data['novedad']}\')'
+    if data['nombre'] != '':
+        query += f' AND e.nombre LIKE \'%{data['nombre']}%\' OR e.apellido LIKE \'%{data['nombre']}%\''  
+    if data['funcion'] != '':
+        query += f' AND f.nombre_funcion = \'{data['funcion']}\''
+    
+    query += """
+GROUP BY e.num_empleado, YEAR(mr.fecha_marca), WEEK(mr.fecha_marca, 1)
+ORDER BY e.num_empleado, semana;
+    """
+    
+    cursor.execute(query)
+    res = cursor.fetchall()
+    try:
+        return json.dumps(res, default=str)
+    except:
+        return 'error'
 
 # Añadir varios movimientos
 # JSON {tipo:str, fecha:str, categoria:str, metodo_pago:str, monto:int, area:str, obs:str}
