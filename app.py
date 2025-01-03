@@ -183,7 +183,7 @@ def marcas():
     if data['n_empleado'] != '':
         query += f' AND e.num_empleado = {data['n_empleado']}'
     if data['novedad'] != '':
-        query += f' AND mr.novedad_fk = (SELECT novedades.id_novedad WHERE novedades.nombre_novedad = \'{data['novedad']}\')'
+        query += f' AND mr.novedad_fk = (SELECT n.id_novedad WHERE n.nombre_novedad = \'{data['novedad']}\')'
     if data['nombre'] != '':
         query += f' AND e.nombre LIKE \'%{data['nombre']}%\' OR e.apellido LIKE \'%{data['nombre']}%\''  
     if data['funcion'] != '':
@@ -229,6 +229,7 @@ def marcas_horasxsemama():
     INNER JOIN emp_hor eh ON e.legajo = eh.legajo_fk 
     INNER JOIN turno_dias td ON eh.turno_dia_fk = td.id_turno_dia 
     INNER JOIN horarios h ON h.id_horario = eh.id_horario_fk 
+    INNER JOIN novedades n ON mr.novedad_fk = n.id_novedad
     WHERE 1 = 1
     AND (
     
@@ -250,7 +251,7 @@ def marcas_horasxsemama():
     if data['novedad'] != '':
         query += f' AND mr.novedad_fk = (SELECT novedades.id_novedad WHERE novedades.nombre_novedad = \'{data['novedad']}\')'
     if data['nombre'] != '':
-        query += f' AND e.nombre LIKE \'%{data['nombre']}%\' OR e.apellido LIKE \'%{data['nombre']}%\''  
+        query += f' AND (e.nombre LIKE \'%{data['nombre']}%\' OR e.apellido LIKE \'%{data['nombre']}%\')'  
     if data['funcion'] != '':
         query += f' AND f.nombre_funcion = \'{data['funcion']}\''
     
